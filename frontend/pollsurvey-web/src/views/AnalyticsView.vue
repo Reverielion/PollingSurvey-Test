@@ -2,73 +2,141 @@
   <main class="page">
     <div class="container">
 
-      <div v-if="loading" class="state-box">
+      <div v-if="store.loading" class="state-box">
         <div class="loader"></div>
-        <p>Loading analytics…</p>
+        <p>Loading poll…</p>
       </div>
 
-      <div v-else-if="error" class="state-box">
-        <p class="error-text">{{ error }}</p>
-        <RouterLink :to="`/results/${code}`" class="btn btn-outline" style="margin-top:1rem">← Back to results</RouterLink>
+      <div v-else-if="store.error" class="state-box">
+        <p class="error-text">{{ store.error }}</p>
+        <RouterLink to="/" class="btn btn-outline" style="margin-top:1rem">← Back home</RouterLink>
       </div>
 
-      <template v-else-if="analytics">
+      <template v-else-if="store.currentPoll && q">
 
-        <div class="page-header">
-          <RouterLink :to="`/results/${code}`" class="back-link">← Results</RouterLink>
+        <div class="poll-meta-row">
+          <span :class="['badge', store.currentPoll.status === 'open' ? 'badge-open' : 'badge-closed']">
+            <span v-if="store.currentPoll.status === 'open'" class="live-dot"></span>
+            {{ store.currentPoll.status }}
+          </span>
+          <span class="poll-code">poll/{{ code }}</span>
         </div>
 
-        <h1 class="page-title">Analytics</h1>
-        <p class="page-sub">{{ analytics.title }}</p>
+        <!-- Poll title as heading, question text as sub -->
+        <h1 class="page-title">{{ store.currentPoll.title }}</h1>
+        <p v-if="q.text !== store.currentPoll.title" class="page-sub" style="margin-bottom:1.25rem">
+          {{ q.text }}
+        </p>
 
-        <!-- Summary cards -->
-        <div class="summary-grid">
-          <div class="summary-card">
-            <span class="summary-number">{{ analytics.totalVotes }}</span>
-            <span class="summary-label">Total votes</span>
-          </div>
-          <div class="summary-card">
-            <span class="summary-number">{{ analytics.peakMinuteCount }}</span>
-            <span class="summary-label">Peak minute votes</span>
-          </div>
-          <div class="summary-card">
-            <span class="summary-number">{{ analytics.peakMinuteLabel }}</span>
-            <span class="summary-label">Peak time</span>
-          </div>
+        <!-- Expiry countdown -->
+        <div v-if="store.currentPoll.expiresAt && store.currentPoll.status === 'open'" class="expiry-bar">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M7 3.5V7l2.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Closes {{ expiryLabel }}</span>
         </div>
 
-        <!-- Votes over time (line chart) -->
-        <div class="card chart-card">
-          <p class="section-label">Votes over time</p>
-          <div class="line-chart-wrap">
-            <Line :data="lineChartData" :options="lineChartOptions" />
+        <!-- CLOSED -->
+        <div v-if="store.currentPoll.status === 'closed'" class="notice-card closed-notice">
+          <div class="notice-icon">
+            <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
+              <rect x="4" y="9" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
           </div>
+          <p class="notice-title">Đã kết thúc</p>
+          <p class="notice-sub">This poll is now closed and no longer accepting votes.</p>
+          <RouterLink :to="`/results/${code}`" class="btn btn-primary" style="margin-top:1.25rem">
+            View final results →
+          </RouterLink>
         </div>
 
-        <!-- Top option trend -->
-        <div class="card">
-          <p class="section-label">Top option trend</p>
-          <div class="trend-rows">
-            <div
-              v-for="(opt, i) in analytics.optionTrends"
-              :key="i"
-              class="trend-row"
-            >
-              <span class="trend-rank" :class="{ 'rank-top': i === 0 }">{{ i + 1 }}</span>
-              <div class="trend-main">
-                <div class="trend-info">
-                  <span class="trend-label">{{ opt.text }}</span>
-                  <span class="trend-pct">{{ opt.percentage }}%</span>
-                </div>
-                <div class="bar-track">
-                  <div class="bar-fill" :class="{ 'bar-top': i === 0 }" :style="{ width: opt.percentage + '%' }"></div>
-                </div>
-              </div>
-              <span class="trend-count">{{ opt.voteCount }}</span>
+        <!-- ALREADY VOTED -->
+        <div v-else-if="store.hasVoted" class="notice-card voted-notice">
+          <div class="notice-icon">✓</div>
+          <p class="notice-title">Vote submitted!</p>
+          <p class="notice-sub">You've already cast your vote for this poll.</p>
+          <RouterLink :to="`/results/${code}`" class="btn btn-primary" style="margin-top:1.25rem">
+            See live results →
+          </RouterLink>
+        </div>
+
+        <!-- VOTING FORM -->
+        <div v-else class="card">
+
+          <!-- multiple_choice -->
+          <template v-if="q.type === 'multiple_choice'">
+            <p class="label">Choose one option</p>
+            <div class="options-list">
+              <button
+                v-for="opt in q.options" :key="opt.id"
+                :class="['option-btn', { selected: selectedOptionId === opt.id }]"
+                @click="selectedOptionId = opt.id"
+              >
+                <span class="option-radio">
+                  <span v-if="selectedOptionId === opt.id" class="radio-fill"></span>
+                </span>
+                <span class="option-text">{{ opt.text }}</span>
+              </button>
             </div>
-          </div>
-        </div>
+          </template>
 
+          <!-- yes_no -->
+          <template v-else-if="q.type === 'yes_no'">
+            <p class="label">Your answer</p>
+            <div class="yn-row">
+              <button
+                v-for="opt in q.options" :key="opt.id"
+                :class="['yn-btn', opt.text === 'Yes' ? 'yes-btn' : 'no-btn',
+                         { selected: selectedOptionId === opt.id }]"
+                @click="selectedOptionId = opt.id"
+              >
+                <span>{{ opt.text }}</span>
+              </button>
+            </div>
+          </template>
+
+          <!-- rating -->
+          <template v-else-if="q.type === 'rating'">
+            <p class="label">Your rating</p>
+            <div class="rating-row">
+              <button
+                v-for="n in 5" :key="n"
+                :class="['star-btn', { active: ratingValue !== null && n <= ratingValue }]"
+                @click="ratingValue = n"
+              >★</button>
+            </div>
+            <p v-if="ratingValue" class="rating-label">{{ ratingLabels[ratingValue - 1] }}</p>
+          </template>
+
+          <!-- open_text -->
+          <template v-else-if="q.type === 'open_text'">
+            <p class="label">Your answer</p>
+            <textarea
+              v-model="openText"
+              class="input open-textarea"
+              placeholder="Type your answer here…"
+              maxlength="500"
+            ></textarea>
+            <p class="char-count">{{ openText.length }} / 500</p>
+          </template>
+
+          <!-- Submit -->
+          <div class="vote-footer">
+            <button
+              class="btn btn-primary vote-btn"
+              :disabled="!canSubmit || voting"
+              @click="submitVote"
+            >
+              {{ voting ? 'Submitting…' : 'Submit' }}
+            </button>
+            <RouterLink :to="`/results/${code}`" class="results-link">
+              View results →
+            </RouterLink>
+          </div>
+
+        </div>
       </template>
 
     </div>
@@ -77,219 +145,143 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { Line } from 'vue-chartjs'
-import {
-  Chart as ChartJS, CategoryScale, LinearScale, PointElement,
-  LineElement, Title, Tooltip, Legend, Filler
-} from 'chart.js'
-import axios from 'axios'
-import { getPollResults } from '@/api/pollApi.js'
+import { useRoute, useRouter } from 'vue-router'
+import { usePollStore } from '@/stores/pollStore.js'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+const route  = useRoute()
+const router = useRouter()
+const store  = usePollStore()
+const code   = route.params.code
 
-const route = useRoute()
-const code  = route.params.code
+// The first (and usually only) question
+const q = computed(() => store.firstQuestion)
 
-const loading   = ref(true)
-const error     = ref(null)
-const analytics = ref(null)
+// Per-type answer state
+const selectedOptionId = ref(null)   // for multiple_choice / yes_no  — stores Option.id (GUID)
+const ratingValue      = ref(null)   // for rating                     — int 1..5
+const openText         = ref('')     // for open_text
 
-/**
- * Distinction: Analytics dashboard
- *
- * Backend currently returns aggregate results only (no VotedAt per vote in results endpoint).
- * We compute mock time-series data from the result totals for the demo.
- *
- * NOTE FOR BACKEND TEAMMATE:
- * To make this real, please add:
- *   GET /api/polls/{code}/analytics
- *   Response: { title, totalVotes, votesOverTime: [{minute: "HH:MM", count: int}], optionTrends: [...] }
- * We will switch to that endpoint once available (just change USE_MOCK_ANALYTICS = false below).
- */
-const USE_MOCK_ANALYTICS = true
+const ratingLabels = ['Poor', 'Fair', 'Good', 'Great', 'Excellent']
 
-onMounted(async () => {
-  try {
-    if (USE_MOCK_ANALYTICS) {
-      // Fetch real results to get actual vote counts and option names
-      const results = await getPollResults(code)
-      analytics.value = buildAnalyticsFromResults(results)
-    } else {
-      const { data } = await axios.get(`/api/polls/${code}/analytics`)
-      analytics.value = data
-    }
-  } catch (e) {
-    error.value = e.response?.status === 404
-      ? 'Poll not found'
-      : 'Could not load analytics. Make sure the poll exists.'
-  } finally {
-    loading.value = false
-  }
+const canSubmit = computed(() => {
+  if (!q.value) return false
+  if (q.value.type === 'open_text') return openText.value.trim().length > 0
+  if (q.value.type === 'rating')    return ratingValue.value !== null
+  return selectedOptionId.value !== null
 })
 
-/**
- * Builds a plausible analytics object from the aggregate results.
- * Simulates a realistic-looking vote-over-time distribution.
- */
-function buildAnalyticsFromResults(results) {
-  // Normalize field names (backend may return PascalCase)
-  const title = results.title ?? results.Title ?? 'Poll'
-  const questions = results.questions ?? results.Questions ?? []
-  const firstQ = questions[0]
-  const options = firstQ?.options ?? firstQ?.Options ?? []
-  const totalVotes = firstQ?.totalVotes ?? firstQ?.TotalVotes ?? 0
+const expiryLabel = computed(() => {
+  const exp = store.currentPoll?.expiresAt
+  if (!exp) return ''
+  const diff = new Date(exp) - new Date()
+  if (diff <= 0) return 'soon'
+  const h = Math.floor(diff / 3600000)
+  const m = Math.floor((diff % 3600000) / 60000)
+  if (h > 24) return `in ${Math.floor(h / 24)} day(s)`
+  if (h > 0)  return `in ${h}h ${m}m`
+  return `in ${m} minute(s)`
+})
 
-  // Simulate votes-over-time for the last 12 minutes
-  const now = new Date()
-  const minuteData = []
-  let remaining = totalVotes
+onMounted(() => store.fetchPoll(code))
 
-  for (let i = 11; i >= 0; i--) {
-    const t = new Date(now.getTime() - i * 60000)
-    const label = t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    // Weight toward the middle to simulate a realistic curve
-    const weight = i >= 5 && i <= 8 ? 3 : 1
-    const share = Math.round((totalVotes * weight) / (12 * 2.5))
-    const count = Math.min(share + Math.floor(Math.random() * 3), remaining)
-    remaining -= count
-    minuteData.push({ label, count })
+async function submitVote() {
+  if (!canSubmit.value || !q.value) return
+  const voting_ = ref(true)
+
+  // Build payload matching SubmitVoteRequest DTO
+  const answer = {
+    questionId:    q.value.id,
+    optionId:      selectedOptionId.value ?? undefined,
+    ratingValue:   ratingValue.value ?? undefined,
+    openTextValue: openText.value.trim() || undefined
   }
-  // Put any remainder in last bucket
-  minuteData[minuteData.length - 1].count += remaining
 
-  const peakBucket = [...minuteData].sort((a, b) => b.count - a.count)[0]
-
-  // Option trends sorted by voteCount desc
-  const optionTrends = [...options]
-    .map(o => ({
-      text:       o.text       ?? o.Text       ?? '',
-      voteCount:  o.voteCount  ?? o.VoteCount  ?? 0,
-      percentage: o.percentage ?? o.Percentage ?? 0
-    }))
-    .sort((a, b) => b.voteCount - a.voteCount)
-
-  return {
-    title,
-    totalVotes,
-    peakMinuteCount: peakBucket?.count ?? 0,
-    peakMinuteLabel: peakBucket?.label ?? '—',
-    votesOverTime: minuteData,
-    optionTrends
-  }
+  await store.vote(code, answer)
+  router.push(`/results/${code}`)
 }
 
-// ── Line chart ──────────────────────────────────
-
-const lineChartData = computed(() => {
-  if (!analytics.value) return { labels: [], datasets: [] }
-  return {
-    labels: analytics.value.votesOverTime.map(d => d.label),
-    datasets: [{
-      label: 'Votes per minute',
-      data: analytics.value.votesOverTime.map(d => d.count),
-      borderColor: '#6b0e1e',
-      backgroundColor: 'rgba(107,14,30,0.1)',
-      borderWidth: 2.5,
-      pointBackgroundColor: '#6b0e1e',
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      tension: 0.4,
-      fill: true
-    }]
-  }
-})
-
-const lineChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: { duration: 800, easing: 'easeOutQuart' },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: '#2c0a10',
-      titleColor: '#f5de8d',
-      bodyColor: '#fcefc6',
-      padding: 10,
-      cornerRadius: 8,
-      callbacks: { label: ctx => `  ${ctx.raw} vote(s)` }
-    }
-  },
-  scales: {
-    x: {
-      ticks: { color: '#9b7c50', font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 } },
-      grid: { display: false }
-    },
-    y: {
-      beginAtZero: true,
-      ticks: { color: '#9b7c50', precision: 0, font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 } },
-      grid: { color: 'rgba(107,14,30,0.08)' }
-    }
-  }
+const voting = ref(false)
+async function submitVoteHandler() {
+  voting.value = true
+  await submitVote()
+  voting.value = false
 }
 </script>
 
 <style scoped>
-.page-header { margin-bottom: 1rem; }
-.back-link   { font-size: .85rem; font-weight: 600; color: var(--color-muted); transition: color var(--transition); }
-.back-link:hover { color: var(--color-accent); text-decoration: none; }
+.poll-meta-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem; }
+.poll-code { font-size:.78rem; color:var(--color-muted); font-family:'Courier New',monospace; }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: .85rem;
-  margin-bottom: 1.25rem;
+.expiry-bar {
+  display:inline-flex; align-items:center; gap:.45rem;
+  font-size:.82rem; font-weight:600; color:var(--color-text-soft);
+  background:rgba(107,14,30,.06); border:1px solid rgba(107,14,30,.12);
+  border-radius:99px; padding:.3rem .85rem; margin-bottom:1.25rem;
 }
-.summary-card {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  padding: 1.1rem 1.25rem;
-  box-shadow: var(--shadow-sm);
-}
-.summary-number {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 1.7rem;
-  font-weight: 700;
-  color: var(--color-accent);
-  line-height: 1.1;
-  margin-bottom: .3rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.summary-label { font-size: .75rem; font-weight: 600; color: var(--color-muted); text-transform: uppercase; letter-spacing: .06em; }
 
-.chart-card { margin-bottom: 1.25rem; }
-.section-label { font-size: .75rem; font-weight: 700; color: var(--color-muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1rem; }
-.line-chart-wrap { height: 240px; position: relative; }
+.notice-card { border-radius:var(--radius-lg); padding:2.75rem 2rem; text-align:center; box-shadow:var(--shadow-sm); }
+.closed-notice { background:#fff8e8; border:1px solid rgba(107,14,30,.15); }
+.voted-notice  { background:var(--color-success-bg); border:1px solid rgba(22,101,52,.2); }
+.notice-icon  { font-size:2rem; margin-bottom:.75rem; }
+.notice-title { font-family:var(--font-display); font-size:1.35rem; font-weight:700; color:var(--color-text); margin-bottom:.4rem; }
+.notice-sub   { font-size:.92rem; color:var(--color-muted); line-height:1.5; }
 
-/* Trend rows */
-.trend-rows { display: flex; flex-direction: column; gap: .9rem; }
-.trend-row  { display: flex; align-items: center; gap: .85rem; }
-.trend-rank {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: var(--color-bg); border: 1.5px solid var(--color-border);
-  display: flex; align-items: center; justify-content: center;
-  font-size: .75rem; font-weight: 700; color: var(--color-muted); flex-shrink: 0;
+/* multiple_choice */
+.options-list { display:flex; flex-direction:column; gap:.7rem; margin-top:.75rem; }
+.option-btn {
+  display:flex; align-items:center; gap:1rem; width:100%; text-align:left;
+  background:var(--color-bg); border:1.5px solid var(--color-border);
+  border-radius:var(--radius-md); padding:1rem 1.2rem;
+  font-family:var(--font-body); font-size:.97rem; font-weight:500;
+  color:var(--color-text); cursor:pointer;
+  transition:border-color var(--transition), background var(--transition),
+              box-shadow var(--transition), transform var(--transition);
 }
-.rank-top { background: var(--color-accent); border-color: var(--color-accent); color: #f5de8d; }
-.trend-main { flex: 1; min-width: 0; }
-.trend-info { display: flex; justify-content: space-between; margin-bottom: .4rem; }
-.trend-label { font-size: .9rem; font-weight: 600; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.trend-pct   { font-size: .82rem; font-weight: 700; color: var(--color-accent); flex-shrink: 0; margin-left: .5rem; }
-.bar-track { height: 8px; background: var(--color-border); border-radius: 99px; overflow: hidden; }
-.bar-fill  { height: 100%; background: var(--color-accent); border-radius: 99px; transition: width 600ms ease; opacity: .7; }
-.bar-fill.bar-top { opacity: 1; }
-.trend-count { width: 36px; text-align: right; font-size: .82rem; font-weight: 700; color: var(--color-muted); flex-shrink: 0; }
-
-.loader { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--color-border); border-top-color: var(--color-accent); animation: spin .8s linear infinite; margin: 0 auto 1rem; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.error-text { color: var(--color-danger); font-weight: 500; }
-
-@media (max-width: 640px) {
-  .summary-grid { grid-template-columns: 1fr 1fr; }
-  .summary-grid .summary-card:last-child { grid-column: span 2; }
+.option-btn:hover    { border-color:var(--color-accent); background:rgba(107,14,30,.04); transform:translateX(3px); }
+.option-btn.selected { border-color:var(--color-accent); background:rgba(107,14,30,.06); box-shadow:0 0 0 3px rgba(107,14,30,.1); }
+.option-radio {
+  width:20px; height:20px; border-radius:50%; border:2px solid var(--color-border);
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  transition:border-color var(--transition);
 }
+.option-btn.selected .option-radio { border-color:var(--color-accent); }
+.radio-fill { width:10px; height:10px; border-radius:50%; background:var(--color-accent); }
+.option-text { flex:1; }
+
+/* yes_no */
+.yn-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:.75rem; }
+.yn-btn {
+  display:flex; align-items:center; justify-content:center;
+  padding:1.4rem 1rem; border-radius:var(--radius-md);
+  font-family:var(--font-body); font-size:1.05rem; font-weight:700;
+  cursor:pointer; border:2px solid var(--color-border); background:var(--color-bg);
+  transition:all var(--transition);
+}
+.yes-btn:hover, .yes-btn.selected { border-color:#166534; background:#dcfce7; color:#166534; }
+.no-btn:hover,  .no-btn.selected  { border-color:#b91c1c; background:#fee2e2; color:#b91c1c; }
+
+/* rating */
+.rating-row { display:flex; gap:.5rem; margin-top:.75rem; }
+.star-btn {
+  font-size:2.2rem; background:transparent; border:none;
+  cursor:pointer; color:var(--color-border);
+  transition:color var(--transition), transform var(--transition); line-height:1;
+}
+.star-btn:hover, .star-btn.active { color:var(--color-accent); transform:scale(1.15); }
+.rating-label { margin-top:.6rem; font-size:.9rem; font-weight:600; color:var(--color-accent); }
+
+/* open_text */
+.open-textarea { height:120px; resize:vertical; margin-top:.5rem; line-height:1.6; }
+.char-count { text-align:right; font-size:.78rem; color:var(--color-muted); margin-top:.35rem; }
+
+.vote-footer { display:flex; align-items:center; gap:1.2rem; margin-top:1.75rem; flex-wrap:wrap; }
+.vote-btn { min-width:140px; }
+.results-link { font-size:.88rem; font-weight:600; color:var(--color-muted); transition:color var(--transition); }
+.results-link:hover { color:var(--color-accent); text-decoration:none; }
+
+.loader { width:36px; height:36px; border-radius:50%; border:3px solid var(--color-border); border-top-color:var(--color-accent); animation:spin .8s linear infinite; margin:0 auto 1rem; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.error-text { color:var(--color-danger); font-weight:500; }
+.live-dot { width:6px; height:6px; border-radius:50%; background:var(--color-success); display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 </style>
