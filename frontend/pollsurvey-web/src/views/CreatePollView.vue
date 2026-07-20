@@ -62,8 +62,8 @@
         <div v-if="questionType === 'yes_no'" class="field">
           <label class="label">Options</label>
           <div class="yn-preview">
-            <span class="yn-pill yes">👍 Yes</span>
-            <span class="yn-pill no">👎 No</span>
+            <span class="yn-pill yes">Yes</span>
+            <span class="yn-pill no">No</span>
           </div>
         </div>
 
@@ -174,10 +174,10 @@ const qrUrl        = computed(() =>
 )
 
 const questionTypes = [
-  { value: 'multiple_choice', icon: '☑️', label: 'Multiple choice' },
-  { value: 'yes_no',          icon: '👍', label: 'Yes / No' },
-  { value: 'rating',          icon: '⭐', label: 'Rating 1–5' },
-  { value: 'open_text',       icon: '💬', label: 'Open text' }
+  { value: 'multiple_choice', label: 'Multiple choice' },
+  { value: 'yes_no', label: 'Yes / No' },
+  { value: 'rating', label: 'Rating 1–5' },
+  { value: 'open_text', label: 'Open text' }
 ]
 
 const shareUrl = () => createdPoll.value
